@@ -5,6 +5,7 @@ from scipy import interpolate
 
 # Define some units
 micrometer = 1.0e-4 #cm
+milimeter = 1.0e-1 #cm
 centimeter = 1.0 #cm
 
 # Class Material
@@ -44,11 +45,14 @@ class GeometricalElement:
         self.material = material 
         self.length = length #cm
         self.dose = 0.0
+        self.microdoses = [0.0]
+        self.mean_dose = 0.0
         self.color = color
         self.npoints = 0
         self.initial_energy = 0.0
         self.final_energy = 0.0
         self.dx = 1.0e-4
+        self.deposited_energies = [0.0]
         
     def restart():
         self.dose = 0.0
@@ -80,6 +84,7 @@ class Experiment:
         print("Beam Energy:", self.beam.energy, "MeV")
         print("Beam Current:", self.beam.intensity*1.0e3, "pA")
         print("Beam Diameter:", self.beam.diameter, "mm")
+        print("Beam Area:", self.beam.area, "cm2")
         self.integration_density = integration_density
         initial_point = 0.0
         self.points = [0.0]
@@ -105,29 +110,34 @@ class Experiment:
         for element in self.elements:
             element.initial_energy = self.energy
             if self.energy <= 1.0e-3:
-                    break
+                self.energies.append(0.0)
+                element.microdoses.append(0.0)
+                break
             print(element.name, element.npoints, "points.")
             for i in range(element.npoints):
                 let = element.material.stopping_power(self.energy)
-                deposited_energy = let*element.material.density*element.dx
+                deposited_energy = let*element.material.density*(element.dx)
                 self.deposited_energies.append(deposited_energy)
+                element.deposited_energies.append(deposited_energy)
                 self.deposited_energy_rates.append(deposited_energy/element.dx)
                 self.energy = self.energy - deposited_energy
                 if self.energy <= 1.0e-3:
                     element.final_energy = self.energy
                     self.energies.append(0.0)
-                    element.dose = element.dose + (self.energy + deposited_energy)*(self.beam.intensity/self.beam.area)
+                    element.microdoses.append((self.energy + deposited_energy)*(self.beam.intensity/self.beam.area)/(element.material.density*(element.dx)))
                     if verbose_level > 0.0:
                         print("Energy:", self.energy)
                         print("Deposited Energy:", deposited_energy)
                     break
                 else:
                     self.energies.append(self.energy)
-                    element.dose = element.dose + deposited_energy*(self.beam.intensity/self.beam.area)
+                    element.microdoses.append(deposited_energy*(self.beam.intensity/self.beam.area)/(element.material.density*(element.dx)))
                 if verbose_level > 0.0:
                     print("Energy:", self.energy)
                     print("Deposited Energy:", deposited_energy)
             element.final_energy = self.energy
+            element.dose = (self.beam.intensity/self.beam.area)*sum(element.deposited_energies)/(element.material.density*element.length)
+            element.mean_dose = sum(element.microdoses)/element.npoints
            
               
 
@@ -135,7 +145,7 @@ class Experiment:
         while len(self.deposited_energies) < len(self.points):
             self.deposited_energies.append(0.0)
             self.energies.append(0.0)
-        init_pos = self.elements[0].length
+        init_pos = 0.0 #self.elements[0].length
         total_points = 0
         for element in shown_elements:
             total_points = total_points + element.npoints
@@ -149,6 +159,10 @@ class Experiment:
         print("---------------------------------------")
         for element in self.elements:
             print(element.name, "recibed a dose of", element.dose, "Gy per second")
+            print(element.name, "recibed a mean dose of", element.mean_dose, "Gy per second")
+            print(element.name, "first point recibed a microdose of", element.microdoses[1], "Gy per second")
+            print(element.name, "last point recibed a microdose of", element.microdoses[-1], "Gy per second")
+            print(element.name, "deposited energy per proton: ", sum(element.deposited_energies), "MeV")
         print()
         for element in self.elements:
             print(element.name, "Initial Proton Energy:", element.initial_energy, "MeV    ", "Final Proton Energy:", element.final_energy, "MeV")
